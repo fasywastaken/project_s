@@ -1,13 +1,11 @@
-//
-// Created by Fasy on 19/04/2026.
-//
+// created by fasy on 19/04/2026
 
 #include "Engine.h"
 #include <cmath>
 #include <fstream>
 #include "Player.h"
 
-// Image Loading Implementations
+// image loading implementations
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
@@ -56,7 +54,7 @@ bool Engine::Initialize() {
         return false;
     }
 
-    // --- LDTK MAP LOADING ---
+    // ldtk map loading
     std::ifstream file("Assets/Level/Test.ldtk");
     if (!file.is_open()) {
         SDL_Log("CRITICAL: Failed to load LDtk map! Check your file path.");
@@ -79,13 +77,11 @@ bool Engine::Initialize() {
     }
     SDL_Log("LDtk Map Loaded: %d x %d tiles", mapWidth, mapHeight);
 
-    // Initial Player Spawn
+    // initial player spawn
     playerX = 1980.0f / 2.0f;
     playerY = 1080.0f / 2.0f;
 
-
-
-    // Load Sounds
+    // load sounds
     if (MIX_Init()) {
         SDL_Log("MIX_Init failed: %s", SDL_GetError());
     }
@@ -94,11 +90,11 @@ bool Engine::Initialize() {
     if (!mainMixer) {
         SDL_Log("MIX_CreateMixer failed: %s", SDL_GetError());
     } else {
-        footstepTracks[0] = MIX_CreateTrack(mainMixer); // Left Foot
-        footstepTracks[1] = MIX_CreateTrack(mainMixer); // Right Foot
+        footstepTracks[0] = MIX_CreateTrack(mainMixer);
+        footstepTracks[1] = MIX_CreateTrack(mainMixer);
     }
 
-    // 4. Load Audio using the new MIX_LoadAudio function
+    // load audio
     waterSteps[0] = MIX_LoadAudio(mainMixer, "Assets/Audio/Environment/water0.mp3", true);
     waterSteps[1] = MIX_LoadAudio(mainMixer, "Assets/Audio/Environment/water1.mp3", true);
 
@@ -108,12 +104,11 @@ bool Engine::Initialize() {
     grassSteps[0] = MIX_LoadAudio(mainMixer, "Assets/Audio/Environment/grass0.mp3", true);
     grassSteps[1] = MIX_LoadAudio(mainMixer, "Assets/Audio/Environment/grass1.mp3", true);
 
-    // Load Textures
-
+    // load textures
     playerTex = LoadSVGToGPU("Assets/Player/Body.svg", 1.0f, &playerWidth, &playerHeight);
-    armTex = LoadTextureToGPU("Assets/Player/Arm.png", nullptr, nullptr);  //CHANGE TO SVG
+    armTex = LoadTextureToGPU("Assets/Player/Arm.png", nullptr, nullptr);
     clock17Tex = LoadTextureToGPU("Assets/Player/Guns/Textures/Clock17-Sprites.png", nullptr, nullptr);
-    crosshairTex = LoadSVGToGPU("Assets/Player/Crosshair.svg", 1.0f, nullptr, nullptr); // CHANGE TO SVG
+    crosshairTex = LoadSVGToGPU("Assets/Player/Crosshair.svg", 1.0f, nullptr, nullptr);
 
     waterTex = LoadSVGToGPU("Assets/Environment/Water.svg", 1.0f, nullptr, nullptr);
     sandTex = LoadSVGToGPU("Assets/Environment/Sand.svg", 1.0f, nullptr, nullptr);
@@ -130,7 +125,8 @@ bool Engine::Initialize() {
     samplerInfo.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     playerSampler = SDL_CreateGPUSampler(gpuDevice, &samplerInfo);
 
-    SDL_HideCursor(); // Hide OS Cursor
+    // hide os cursor
+    SDL_HideCursor();
 
     if (!SetupPipeline()) {
         return false;
@@ -214,7 +210,7 @@ void Engine::DrawQuad(SDL_GPUCommandBuffer* cmdBuf, SDL_GPURenderPass* renderPas
     SDL_BindGPUFragmentSamplers(renderPass, 0, &binding, 1);
 
     SDL_PushGPUVertexUniformData(cmdBuf, 0, &pushData, sizeof(PushConstants));
-    SDL_PushGPUFragmentUniformData(cmdBuf, 0, &pushData, sizeof(PushConstants)); // <-- NEW!
+    SDL_PushGPUFragmentUniformData(cmdBuf, 0, &pushData, sizeof(PushConstants));
 
     SDL_DrawGPUPrimitives(renderPass, 6, 1, 0, 0);
 }
@@ -249,15 +245,9 @@ void Engine::Render(const Player& player, float mouseX, float mouseY) const {
     float cameraX = player.x - (1980.0f / 2.0f);
     float cameraY = player.y - (1080.0f / 2.0f);
 
-// ==========================================
-    // DRAW CALL 0: MULTI-LAYER MARCHING SQUARES
-    // ==========================================
-
-    // We wrap the marching squares logic in a lambda so we can call it for each layer!
+    // draw call 0: multi-layer marching squares
     auto drawTerrainLayer = [&](int thresholdValue, SDL_GPUTexture* layerTexture) {
 
-        // THE SECRET TRICK: If a tile is EQUAL TO or HIGHER than our current layer,
-        // we treat it as "Solid" (1). This makes Sand run underneath Grass seamlessly!
         auto getTile = [&](int gridX, int gridY) -> int {
             if (gridX < 0 || gridX >= mapWidth || gridY < 0 || gridY >= mapHeight) return 0;
             return (mapGrid[gridY * mapWidth + gridX] >= thresholdValue) ? 1 : 0;
@@ -313,26 +303,24 @@ void Engine::Render(const Player& player, float mouseX, float mouseY) const {
             }
         }
     };
-    //Draw Terrain
+
+    // draw terrain
     drawTerrainLayer(1, waterTex);
     drawTerrainLayer(2, sandTex);
     drawTerrainLayer(3, grassTex);
 
-    // ==========================================
-    // DRAW CALL 0.5: CHUNK DEBUG GRID
-    // ==========================================
-    
+    // draw call 0.5: chunk debug grid
     constexpr float chunkSize = 24.0f * 24.0f;
     constexpr float lineThickness = 2.0f;
 
-    // Calculate the first visible chunk line on the screen
+    // calculate first visible chunk line
     float startX = std::floor(cameraX / chunkSize) * chunkSize;
     float startY = std::floor(cameraY / chunkSize) * chunkSize;
 
     float endX = cameraX + 1980.0f;
     float endY = cameraY + 1080.0f;
 
-    // --- DRAW VERTICAL CHUNK LINES ---
+    // draw vertical chunk lines
     for (float x = startX; x <= endX; x += chunkSize) {
         float screenX = x - cameraX;
 
@@ -342,16 +330,14 @@ void Engine::Render(const Player& player, float mouseX, float mouseY) const {
             lineThickness, 1080.0f,
             1.0f, 0.0f,
 
-            // Sample the dead-center of the crosshair (solid white pixel)
             0.5f, 0.5f, 0.0f, 0.0f,
 
-            // THE COLOR TINT: {R, G, B, Alpha} -> Semi-transparent Gray
             {0.5f, 0.5f, 0.5f, 0.5f}
         };
         DrawQuad(cmdBuf, renderPass, crosshairTex, verticalLine);
     }
 
-    // --- DRAW HORIZONTAL CHUNK LINES ---
+    // draw horizontal chunk lines
     for (float y = startY; y <= endY; y += chunkSize) {
         float screenY = y - cameraY;
 
@@ -363,13 +349,12 @@ void Engine::Render(const Player& player, float mouseX, float mouseY) const {
 
             0.5f, 0.5f, 0.0f, 0.0f,
 
-            // THE COLOR TINT: {R, G, B, Alpha} -> Semi-transparent Gray
             {0.0f, 0.0f, 0.0f, 0.15f}
         };
         DrawQuad(cmdBuf, renderPass, crosshairTex, horizontalLine);
     }
 
-    // --- DRAW CALL 1: BODY ---
+    // draw call 1: body
     PushConstants bodyData = {
         1980.0f, 1080.0f,
         player.x - cameraX, player.y - cameraY,
@@ -379,7 +364,7 @@ void Engine::Render(const Player& player, float mouseX, float mouseY) const {
     };
     DrawQuad(cmdBuf, renderPass, playerTex, bodyData);
 
-    // --- DRAW CALL 2: ARMS/WEAPON ---
+    // draw call 2: arms and weapon
     float drawAngle = player.armAngle + 1.570796f;
     bool aimingLeft = std::cos(player.armAngle) < 0.0f;
     float flipX = aimingLeft ? -1.0f : 1.0f;
@@ -430,10 +415,10 @@ void Engine::Render(const Player& player, float mouseX, float mouseY) const {
         DrawQuad(cmdBuf, renderPass, armTex, armData);
     }
 
-    // --- DRAW CALL 3: CROSSHAIR ---
+    // draw call 3: crosshair
     PushConstants crosshairData = {
         1980.0f, 1080.0f,
-        mouseX, mouseY, // Raw Screen Coordinates!
+        mouseX, mouseY,
         32.0f, 32.0f,
         1.0f, 0.0f,
         0.0f, 0.0f, 1.0f, 1.0f,
@@ -453,23 +438,21 @@ void Engine::Shutdown() {
 
     if (gpuDevice) {
         SDL_WaitForGPUIdle(gpuDevice);
-        //engine
+
         if (pipeline) SDL_ReleaseGPUGraphicsPipeline(gpuDevice, pipeline);
         if (playerSampler) SDL_ReleaseGPUSampler(gpuDevice, playerSampler);
         if (unitQuad) SDL_ReleaseGPUBuffer(gpuDevice, unitQuad);
-        //player
+
         if (playerTex) SDL_ReleaseGPUTexture(gpuDevice, playerTex);
         if (crosshairTex) SDL_ReleaseGPUTexture(gpuDevice, crosshairTex);
         if (armTex) SDL_ReleaseGPUTexture(gpuDevice, armTex);
-        //weapons
+
         if (clock17Tex) SDL_ReleaseGPUTexture(gpuDevice, clock17Tex);
 
-        //textures
         if (waterTex) SDL_ReleaseGPUTexture(gpuDevice, waterTex);
         if (grassTex) SDL_ReleaseGPUTexture(gpuDevice, grassTex);
         if (sandTex) SDL_ReleaseGPUTexture(gpuDevice, sandTex);
 
-        //audio
         for (int i=0; i<2; i++) {
             if (waterSteps[i]) MIX_DestroyAudio(waterSteps[i]);
             if (sandSteps[i]) MIX_DestroyAudio(sandSteps[i]);
@@ -478,7 +461,6 @@ void Engine::Shutdown() {
         if (mainMixer) MIX_DestroyMixer(mainMixer);
         MIX_Quit();
 
-        //window
         if (window) SDL_ReleaseWindowFromGPUDevice(gpuDevice, window);
         SDL_DestroyGPUDevice(gpuDevice);
     }
@@ -488,7 +470,6 @@ void Engine::Shutdown() {
     SDL_Quit();
 }
 
-// ... [SetupPipeline, LoadShader, and CreateUnitQuad remain exactly the same] ...
 bool Engine::SetupPipeline() {
     SDL_GPUShader* vertShader = LoadShader("sprite.vert.spv", SDL_GPU_SHADERSTAGE_VERTEX);
     SDL_GPUShader* fragShader = LoadShader("sprite.frag.spv", SDL_GPU_SHADERSTAGE_FRAGMENT);

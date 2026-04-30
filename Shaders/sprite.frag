@@ -4,7 +4,6 @@ layout(location = 0) in vec2 v_uv;
 layout(location = 0) out vec4 outColor;
 layout(set = 2, binding = 0) uniform sampler2D spriteTexture;
 
-// THE FIX: SDL3 Fragment Uniforms are strictly Set 3!
 layout(set = 3, binding = 0) uniform PushConstants {
     vec2 screenSize;
     vec2 objPos;

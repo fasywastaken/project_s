@@ -1,6 +1,4 @@
-//
-// Created by Fasy on 19/04/2026.
-//
+// created by fasy on 19/04/2026
 
 #include "Player.h"
 #include <cmath>
@@ -14,7 +12,7 @@ Player::Player(float startX, float startY)
 }
 
 void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouseY, const int* mapGrid, int mapWidth, int mapHeight) {
-    // 1. Calculate raw input direction
+    // calculate raw input direction
     float inputX = 0.0f;
     float inputY = 0.0f;
 
@@ -38,7 +36,8 @@ void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouse
 
     float speedMultiplier = 1.0f;
 
-    if (standingOnTile == 1) { //water slow
+    // water slow
+    if (standingOnTile == 1) {
         speedMultiplier = 0.66f;
     }
 
@@ -51,10 +50,8 @@ void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouse
         stepCooldown -= deltaTime;
     }
 
-    // Are we trying to move this frame?
     if (dx != 0.0f || dy != 0.0f) {
 
-        // We are moving! Is the bouncer letting us play a sound?
         if (stepCooldown <= 0.0f) {
             justStepped = true;
             stepToggle = 1 - stepToggle;
@@ -65,11 +62,11 @@ void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouse
     }
 
 
-    // --- 4. PHYSICS & COLLISION SYSTEM ---
-    float hitboxRadius = 24.0f; // Character physical size
-    float tileSize = 32.0f;     // LDtk grid size
+    // physics and collision system
+    float hitboxRadius = 24.0f;
+    float tileSize = 32.0f;
 
-    // X-Axis Collision
+    // x-axis collision
     if (dx != 0.0f) {
         float proposedX = x + dx;
         float checkX = (dx > 0) ? proposedX + hitboxRadius : proposedX - hitboxRadius;
@@ -78,16 +75,15 @@ void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouse
         int gridYTop = static_cast<int>((y - hitboxRadius) / tileSize);
         int gridYBot = static_cast<int>((y + hitboxRadius) / tileSize);
 
-        // Check if we hit a wall (Value 1)
         if (gridX >= 0 && gridX < mapWidth && gridYTop >= 0 && gridYBot < mapHeight) {
             if (mapGrid[gridYTop * mapWidth + gridX] != 4 &&
                 mapGrid[gridYBot * mapWidth + gridX] != 4) {
-                x = proposedX; // Safe!
+                x = proposedX;
             }
         }
     }
 
-    // Y-Axis Collision
+    // y-axis collision
     if (dy != 0.0f) {
         float proposedY = y + dy;
         float checkY = (dy > 0) ? proposedY + hitboxRadius : proposedY - hitboxRadius;
@@ -99,17 +95,17 @@ void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouse
         if (gridY >= 0 && gridY < mapHeight && gridXLeft >= 0 && gridXRight < mapWidth) {
             if (mapGrid[gridY * mapWidth + gridXLeft] != 4 &&
                 mapGrid[gridY * mapWidth + gridXRight] != 4) {
-                y = proposedY; // Safe!
+                y = proposedY;
             }
         }
     }
 
-    // 5. Aiming
+    // aiming
     float aimDx = mouseX - x;
     float aimDy = mouseY - y;
     armAngle = std::atan2(aimDy, aimDx);
 
-    // 6. Universal 3-Frame Attack Loop
+    // universal 3-frame attack loop
     if (isAttacking) {
         frameTimer += deltaTime;
         if (frameTimer > 0.08f) {
@@ -128,7 +124,6 @@ void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouse
 void Player::Attack() {
     if (!isAttacking) {
         isAttacking = true;
-        // Toggle the combo state (1 -> 2, or 2 -> 1)
         currentCombo = (currentCombo == 1) ? 2 : 1;
 
         currentFrame = 1;

@@ -9,18 +9,14 @@ class Weapon {
 public:
     SDL_GPUTexture* texture;
 
-    // Rendering dimensions
     float width;
     float height;
 
-    // Where the hand grips the weapon relative to its center
     float gripOffsetX;
     float gripOffsetY;
 
-    // Spritesheet slice coordinates (0.0 to 1.0)
     float uvX, uvY, uvW, uvH;
 
-    // Gameplay stats
     int damage;
     float fireRate;
 

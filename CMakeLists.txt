@@ -3,18 +3,17 @@ project(project_s)
 
 set(CMAKE_CXX_STANDARD 20)
 
-#SDL3
+# sdl3
 include(FetchContent)
 FetchContent_Declare(
         SDL3
-        GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-        GIT_TAG        main
+        URL https://github.com/libsdl-org/SDL/archive/refs/heads/main.zip
 )
 FetchContent_MakeAvailable(SDL3)
 
 set(SDLMIXER_MP3 ON CACHE BOOL "Enable MP3 support" FORCE)
 
-#preventing red text in console
+# preventing red text in console
 set(SDLMIXER_MOD OFF CACHE BOOL "Disable MOD support" FORCE)
 set(SDLMIXER_MIDI OFF CACHE BOOL "Disable MIDI support" FORCE)
 set(SDLMIXER_FLAC OFF CACHE BOOL "Disable FLAC support" FORCE)
@@ -23,8 +22,7 @@ set(SDLMIXER_WAVPACK OFF CACHE BOOL "Disable WAVPACK support" FORCE)
 
 FetchContent_Declare(
         SDL3_mixer
-        GIT_REPOSITORY https://github.com/libsdl-org/SDL_mixer.git
-        GIT_TAG        main
+        URL https://github.com/libsdl-org/SDL_mixer/archive/refs/heads/main.zip
 )
 FetchContent_MakeAvailable(SDL3_mixer)
 
@@ -42,14 +40,14 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         SDL3_mixer::SDL3_mixer
 )
 
-#Asset Folder
+# asset folder
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/Assets"
         "$<TARGET_FILE_DIR:${PROJECT_NAME}>/Assets"
 )
 
-#Shaders
+# shaders
 find_program(GLSLC glslc REQUIRED)
 set(SHADER_SOURCES
         "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/sprite.vert"
@@ -63,6 +61,5 @@ foreach(SHADER IN LISTS SHADER_SOURCES)
     add_custom_command(
             TARGET ${PROJECT_NAME} PRE_BUILD
             COMMAND ${GLSLC} ${SHADER} -o ${SPV_FILE}
-            COMMENT "Compiling ${FILE_NAME} to SPIR-V..."
     )
 endforeach ()
