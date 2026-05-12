@@ -1,33 +1,27 @@
 // created by fasy on 19/04/2026
 
-#include "Engine.h"
+#include "../Engine.h"
 #include <cmath>
 #include <fstream>
 #include "Player.h"
+#include <random>
 
-// image loading implementations
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
+#include <lunasvg.h>
+#include "../json.hpp"
 
-#define NANOSVG_IMPLEMENTATION
-#include "nanosvg.h"
-
-#define NANOSVGRAST_IMPLEMENTATION
-#include "nanosvgrast.h"
-
-#include "json.hpp"
 using json = nlohmann::json;
 
-Engine::Engine() : isRunning(false), window(nullptr), gpuDevice(nullptr),
-                   pipeline(nullptr), unitQuad(nullptr), waterTex(nullptr), sandTex(nullptr), grassTex(nullptr),
-                   playerTex(nullptr),
-                   playerSampler(nullptr), crosshairTex(nullptr), armTex(nullptr), clock17Tex(nullptr), waterSteps{},
-                   sandSteps{},
-                   grassSteps{},
-                   playerX(0.0f),
-                   playerY(0.0f),
-                   playerWidth(0), playerHeight(0), mapGrid(nullptr),
-                   mapWidth(0), mapHeight(0) {
+Engine::Engine() :
+    isRunning(false), window(nullptr), gpuDevice(nullptr),pipeline(nullptr), unitQuad(nullptr),
+    waterTex(nullptr), sandTex(nullptr), grassTex(nullptr),
+    activePaletteTex(nullptr), testPaletteTex(nullptr), paletteSamplerObj(nullptr),
+    playerTex(nullptr), playerSampler(nullptr), crosshairTex(nullptr),
+    armTex(nullptr), ak74Tex(nullptr),
+    mainMixer(nullptr),footstepTracks{nullptr, nullptr},
+    waterSteps{nullptr, nullptr},sandSteps{nullptr, nullptr},grassSteps{nullptr, nullptr},
+    playerX(0.0f), playerY(0.0f),playerWidth(0), playerHeight(0),
+    mapGrid(nullptr),mapWidth(0), mapHeight(0),
+    activeTracers(), tracer762Tex(nullptr) {
 }
 
 Engine::~Engine() {
@@ -57,7 +51,7 @@ bool Engine::Initialize() {
     // ldtk map loading
     std::ifstream file("Assets/Level/Test.ldtk");
     if (!file.is_open()) {
-        SDL_Log("CRITICAL: Failed to load LDtk map! Check your file path.");
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Engine Error", "Failed to load LDtk map! Check your working directory.", nullptr);
         return false;
     }
 
@@ -82,7 +76,7 @@ bool Engine::Initialize() {
     playerY = 1080.0f / 2.0f;
 
     // load sounds
-    if (MIX_Init()) {
+    if (!MIX_Init()) {
         SDL_Log("MIX_Init failed: %s", SDL_GetError());
     }
 
@@ -105,10 +99,16 @@ bool Engine::Initialize() {
     grassSteps[1] = MIX_LoadAudio(mainMixer, "Assets/Audio/Environment/grass1.mp3", true);
 
     // load textures
-    playerTex = LoadSVGToGPU("Assets/Player/Body.svg", 1.0f, &playerWidth, &playerHeight);
-    armTex = LoadTextureToGPU("Assets/Player/Arm.png", nullptr, nullptr);
-    clock17Tex = LoadTextureToGPU("Assets/Player/Guns/Textures/Clock17-Sprites.png", nullptr, nullptr);
+    activePaletteTex = LoadSVGToGPU("Assets/Player/Skins/Skin_default.svg", 32.0f, nullptr, nullptr);
+    testPaletteTex = LoadSVGToGPU("Assets/Player/Skins/Skin_test1.svg", 32.0f, nullptr, nullptr);
+
+    playerTex = LoadSVGToGPU("Assets/Player/Base/Body_mask.svg", 5.0f, &playerWidth, &playerHeight);
+    armTex = LoadSVGToGPU("Assets/Player/Base/Arm_mask.svg", 4.0f, nullptr, nullptr);
     crosshairTex = LoadSVGToGPU("Assets/Player/Crosshair.svg", 1.0f, nullptr, nullptr);
+
+    ak74Tex = LoadSVGToGPU("Assets/Player/Guns/Textures/AK74_mask.svg", 5.0f, nullptr, nullptr);
+
+    tracer762Tex = LoadSVGToGPU("Assets/Player/Guns/Tracer/Tracer_762.svg", 1.0f, nullptr, nullptr);
 
     waterTex = LoadSVGToGPU("Assets/Environment/Water.svg", 1.0f, nullptr, nullptr);
     sandTex = LoadSVGToGPU("Assets/Environment/Sand.svg", 1.0f, nullptr, nullptr);
@@ -122,13 +122,21 @@ bool Engine::Initialize() {
     samplerInfo.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
     samplerInfo.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     samplerInfo.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    samplerInfo.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     playerSampler = SDL_CreateGPUSampler(gpuDevice, &samplerInfo);
+
+    SDL_GPUSamplerCreateInfo paletteSamplerInfo = {};
+    paletteSamplerInfo.min_filter = SDL_GPU_FILTER_NEAREST;
+    paletteSamplerInfo.mag_filter = SDL_GPU_FILTER_LINEAR;
+    paletteSamplerInfo.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+    paletteSamplerInfo.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    paletteSamplerInfo.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    paletteSamplerObj = SDL_CreateGPUSampler(gpuDevice, &paletteSamplerInfo);
 
     // hide os cursor
     SDL_HideCursor();
 
     if (!SetupPipeline()) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Engine Error", "Failed to compile Shaders! Are the .spv files in the current directory?", nullptr);
         return false;
     }
 
@@ -138,9 +146,15 @@ bool Engine::Initialize() {
 
 void Engine::Run() {
     Player player(1980.0f / 2.0f, 1080.0f / 2.0f);
-    Weapon clock17(clock17Tex, 96.0f, 96.0f, 2.5f, 0.0f, 0.0f, 0.0f, 0.5f, 1.0f);
 
-    player.SetInventorySlot(0, &clock17);
+    Weapon ak74(ak74Tex,
+            64.0f, 64.0f,
+            15.0f, 0.0f,
+            0.0f, 0.0f, 1.0f / 6.0f, 1.0f / 5.0f,
+            6, 5, 30, 2.5f, 0.1f, 30);
+
+    //temp
+    player.SetInventorySlot(0, &ak74);
     player.EquipSlot(0);
 
     Uint64 lastTime = SDL_GetTicksNS();
@@ -162,6 +176,18 @@ void Engine::Run() {
 
         player.Update(deltaTime, SDL_GetKeyboardState(nullptr), worldMouseX, worldMouseY, mapGrid, mapWidth, mapHeight);
         Render(player, mouseX, mouseY);
+
+        for (auto it = activeTracers.begin(); it != activeTracers.end(); ) {
+            it->life -= deltaTime;
+            it->currentX += std::cos(it->angle) * it->speed * deltaTime;
+            it->currentY += std::sin(it->angle) * it->speed * deltaTime;
+
+            if (it->life <= 0.0f) {
+                it = activeTracers.erase(it);
+            } else {
+                ++it;
+            }
+        }
 
         if (player.justStepped) {
             MIX_Audio* soundToPlay = nullptr;
@@ -198,16 +224,62 @@ void Engine::ProcessInput(Player& player) {
                 player.Attack();
             }
         }
+
+        if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+
+            if (keys[SDL_SCANCODE_R]) {
+                player.TriggerReload();
+            }
+            if (event.key.scancode == SDL_SCANCODE_KP_7) {
+                player.activeGearLayout = (player.activeGearLayout + 1) % 8;
+                SDL_Log("Switched to Gear Layout: %d", player.activeGearLayout);
+            }
+            if (event.key.scancode == SDL_SCANCODE_KP_8) {
+                player.activeSkin = (player.activeSkin + 1) % 2;
+                SDL_Log("Switched to Skin: %d", player.activeSkin);
+            }
+            if (event.key.scancode == SDL_SCANCODE_KP_9) {
+                player.armorLevel = (player.armorLevel + 1) % 4;
+                SDL_Log("Switched to Armor Level: %d", player.armorLevel);
+            }
+        }
+    }
+    Uint32 mouseState = SDL_GetMouseState(nullptr, nullptr);
+    if (mouseState & SDL_BUTTON_LMASK) {
+        float gunTipX, gunTipY;
+        if (player.AttemptFire(gunTipX, gunTipY)) {
+            Tracer newBullet{};
+            newBullet.startX = gunTipX;
+            newBullet.startY = gunTipY;
+            newBullet.currentX = gunTipX;
+            newBullet.currentY = gunTipY;
+
+            // FIX: Use modern C++11 random generation
+            static std::mt19937 rng(std::random_device{}());
+            std::uniform_real_distribution<float> spreadDist(-0.025f, 0.025f);
+            float spread = spreadDist(rng);
+
+            newBullet.angle = player.armAngle + spread;
+            newBullet.speed = 2500.0f;
+            newBullet.length = 80.0f;
+            newBullet.life = 1.0f;
+
+            activeTracers.push_back(newBullet);
+        }
     }
 }
 
-void Engine::DrawQuad(SDL_GPUCommandBuffer* cmdBuf, SDL_GPURenderPass* renderPass, SDL_GPUTexture* texture, const PushConstants& pushData) const {
-    if (texture == nullptr) {
-        return;
-    }
+void Engine::DrawQuad(SDL_GPUCommandBuffer* cmdBuf, SDL_GPURenderPass* renderPass,
+                      SDL_GPUTexture* spriteTex, SDL_GPUTexture* paletteTex,
+                      const PushConstants& pushData) const {
 
-    SDL_GPUTextureSamplerBinding binding = { texture, playerSampler };
-    SDL_BindGPUFragmentSamplers(renderPass, 0, &binding, 1);
+    if (spriteTex == nullptr || paletteTex == nullptr) return;
+
+    SDL_GPUTextureSamplerBinding bindings[2] = {
+        { spriteTex, playerSampler },
+        { paletteTex, paletteSamplerObj }
+    };
+    SDL_BindGPUFragmentSamplers(renderPass, 0, bindings, 2);
 
     SDL_PushGPUVertexUniformData(cmdBuf, 0, &pushData, sizeof(PushConstants));
     SDL_PushGPUFragmentUniformData(cmdBuf, 0, &pushData, sizeof(PushConstants));
@@ -295,10 +367,8 @@ void Engine::Render(const Player& player, float mouseX, float mouseY) const {
                         tileSize, tileSize,
                         1.0f, 0.0f,
                         calculatedUvX, calculatedUvY, uvWidth, uvHeight,
-                        {1.0f, 1.0f, 1.0f, 1.0f}
-                    };
-
-                    DrawQuad(cmdBuf, renderPass, layerTexture, tileData);
+            {1.0f, 1.0f, 1.0f, -1.0f}};
+                    DrawQuad(cmdBuf, renderPass, layerTexture, layerTexture, tileData);
                 }
             }
         }
@@ -321,7 +391,12 @@ void Engine::Render(const Player& player, float mouseX, float mouseY) const {
     float endY = cameraY + 1080.0f;
 
     // draw vertical chunk lines
-    for (float x = startX; x <= endX; x += chunkSize) {
+    int startCol = static_cast<int>(std::floor(startX / chunkSize));
+    int endCol = static_cast<int>(std::ceil(endX / chunkSize));
+
+
+    for (int i = startCol; i <= endCol; ++i) {
+        float x = static_cast<float>(i) * chunkSize;
         float screenX = x - cameraX;
 
         PushConstants verticalLine = {
@@ -332,13 +407,17 @@ void Engine::Render(const Player& player, float mouseX, float mouseY) const {
 
             0.5f, 0.5f, 0.0f, 0.0f,
 
-            {0.5f, 0.5f, 0.5f, 0.5f}
+            {0.5f, 0.5f, 0.5f, -1.0f}
         };
-        DrawQuad(cmdBuf, renderPass, crosshairTex, verticalLine);
+        DrawQuad(cmdBuf, renderPass, crosshairTex, crosshairTex, verticalLine);
     }
 
     // draw horizontal chunk lines
-    for (float y = startY; y <= endY; y += chunkSize) {
+    int startRow = static_cast<int>(std::floor(startY / chunkSize));
+    int endRow = static_cast<int>(std::ceil(endY / chunkSize));
+
+    for (int i = startRow; i <= endRow; ++i) {
+        float y = static_cast<float>(i) * chunkSize;
         float screenY = y - cameraY;
 
         PushConstants horizontalLine = {
@@ -349,70 +428,140 @@ void Engine::Render(const Player& player, float mouseX, float mouseY) const {
 
             0.5f, 0.5f, 0.0f, 0.0f,
 
-            {0.0f, 0.0f, 0.0f, 0.15f}
+            {0.5f, 0.5f, 0.5f, -1.0f}
         };
-        DrawQuad(cmdBuf, renderPass, crosshairTex, horizontalLine);
+        DrawQuad(cmdBuf, renderPass, crosshairTex, crosshairTex, horizontalLine);
     }
 
-    // draw call 1: body
+    float drawAngle = player.armAngle + 1.570796f;
+    // DRAW CALL 1: BODY
+    float bodyUvW = 0.25f;
+    float bodyUvH = 0.5f;
+
+    constexpr float ARMOR_PALETTE[4][4] = {
+        { 0.0f, 0.0f, 0.0f, 0.0f },   // Lvl 0
+        { 0.33f, 0.33f, 0.33f, 1.0f },// Lvl 1
+        { 0.66f, 0.66f, 0.66f, 1.0f },// Lvl 2
+        { 0.1f, 0.1f, 0.1f, 1.0f }    // Lvl 3
+    };
+
+    float currentArmorColor[4] = {
+        ARMOR_PALETTE[player.armorLevel][0],
+        ARMOR_PALETTE[player.armorLevel][1],
+        ARMOR_PALETTE[player.armorLevel][2],
+        ARMOR_PALETTE[player.armorLevel][3]
+    };
+
+    int gearRow = player.activeGearLayout / 4;
+    int gearCol = player.activeGearLayout % 4;
+
+    float bodyUvX = static_cast<float>(gearCol) * bodyUvW;
+    float bodyUvY = static_cast<float>(gearRow) * bodyUvH;
+
+    SDL_GPUTexture* currentSkinTex = (player.activeSkin == 0) ? activePaletteTex : testPaletteTex;
+
     PushConstants bodyData = {
         1980.0f, 1080.0f,
         player.x - cameraX, player.y - cameraY,
-        64.0f, 64.0f, 1.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 1.0f,
-        {1.0f, 1.0f, 1.0f, 1.0f}
+        64.0f, 64.0f,
+        std::cos(drawAngle), std::sin(drawAngle),
+        bodyUvX, bodyUvY, bodyUvW, bodyUvH,
+        { currentArmorColor[0], currentArmorColor[1], currentArmorColor[2], currentArmorColor[3] }
     };
-    DrawQuad(cmdBuf, renderPass, playerTex, bodyData);
 
-    // draw call 2: arms and weapon
-    float drawAngle = player.armAngle + 1.570796f;
-    bool aimingLeft = std::cos(player.armAngle) < 0.0f;
-    float flipX = aimingLeft ? -1.0f : 1.0f;
+    DrawQuad(cmdBuf, renderPass, playerTex, currentSkinTex, bodyData);
 
+    // ---------------------------------------------------------
+    // DRAW CALL 2: WEAPON OR UNARMED (SLOT 3)
+    // ---------------------------------------------------------
     if (player.equippedWeapon != nullptr) {
+        // --- EQUIPPED WEAPON LOGIC ---
         float recoil = 0.0f;
+        int animFrame = 0;
+
+        int cols = player.equippedWeapon->animCols;
+        int rows = player.equippedWeapon->animRows;
+        int totalFrames = player.equippedWeapon->totalAnimFrames;
+
         if (player.isAttacking) {
-            if (player.currentFrame == 1) recoil = -10.0f;
-            if (player.currentFrame == 2) recoil = -5.0f;
+            animFrame = player.currentFrame % totalFrames;
+            if (animFrame == 1) recoil = -10.0f;
+            if (animFrame == 2) recoil = -5.0f;
         }
 
         float dist = 35.0f + recoil;
         float gunX = player.x + (std::cos(player.armAngle) * (dist + player.equippedWeapon->gripOffsetX));
         float gunY = player.y + (std::sin(player.armAngle) * (dist + player.equippedWeapon->gripOffsetX));
-        float currentUvX = player.equippedWeapon->uvX + (player.equippedWeapon->isAkimbo ? player.equippedWeapon->uvW : 0.0f);
+
+        float frameWidth = 1.0f / static_cast<float>(cols);
+        float frameHeight = 1.0f / static_cast<float>(rows);
+
+        int animRow = animFrame / cols;
+        int animCol = animFrame % cols;
+
+        float currentUvX = static_cast<float>(animCol) * frameWidth;
+        float currentUvY = static_cast<float>(animRow) * frameHeight;
 
         PushConstants weaponData = {
             1980.0f, 1080.0f,
             gunX - cameraX, gunY - cameraY,
-            player.equippedWeapon->width * flipX, player.equippedWeapon->height,
+            player.equippedWeapon->width, player.equippedWeapon->height,
             std::cos(drawAngle), std::sin(drawAngle),
-            currentUvX, player.equippedWeapon->uvY, player.equippedWeapon->uvW, player.equippedWeapon->uvH,
-            {1.0f, 1.0f, 1.0f, 1.0f}
+            currentUvX, currentUvY, frameWidth, frameHeight,
+            { currentArmorColor[0], currentArmorColor[1], currentArmorColor[2], 1.0f }
         };
-        DrawQuad(cmdBuf, renderPass, player.equippedWeapon->texture, weaponData);
 
+        DrawQuad(cmdBuf, renderPass, player.equippedWeapon->texture, currentSkinTex, weaponData);
     } else {
-        float dist = 25.0f;
-        float armX = player.x + (std::cos(player.armAngle) * dist);
-        float armY = player.y + (std::sin(player.armAngle) * dist);
+        // --- SLOT 3 (ALTERNATING VIA currentCombo) ---
+        int armFrame = 0;
 
-        auto mappedFrame = static_cast<float>(player.currentFrame);
-        if (player.currentCombo == 2 && player.isAttacking) {
-            mappedFrame += 3.0f;
+        if (player.isAttacking) {
+            if (player.currentCombo == 1) {
+                // Right Arm: Uses SVG frames 0, 1, 2, 3
+                armFrame = player.currentFrame;
+            } else {
+                // Left Arm: Uses SVG frames 0, 4, 5, 6
+                // Frame 0 is shared Idle, then skip to the Left Hook frames
+                armFrame = (player.currentFrame == 0) ? 0 : player.currentFrame + 3;
+            }
         }
 
-        float frameWidth = 1.0f / 7.0f;
-        float currentUvX = mappedFrame * frameWidth;
+        float totalArmFrames = 7.0f; //
+        float handDist = 25.0f;
+
+        float handX = player.x + (std::cos(player.armAngle) * handDist);
+        float handY = player.y + (std::sin(player.armAngle) * handDist);
+
+        float armUvW = 1.0f / totalArmFrames;
+        float armUvH = 1.0f;
+        float currentArmUvX = (static_cast<float>(armFrame) * armUvW) + 0.0001f;
 
         PushConstants armData = {
             1980.0f, 1080.0f,
-            armX - cameraX, armY - cameraY,
-            96.0f * flipX, 96.0f,
+            handX - cameraX, handY - cameraY,
+            64.0f, 64.0f,
             std::cos(drawAngle), std::sin(drawAngle),
-            currentUvX, 0.0f, frameWidth, 1.0f,
-            {1.0f, 1.0f, 1.0f, 1.0f}
+            currentArmUvX, 0.0f, armUvW, armUvH,
+            { currentArmorColor[0], currentArmorColor[1], currentArmorColor[2], 1.0f }
         };
-        DrawQuad(cmdBuf, renderPass, armTex, armData);
+
+        DrawQuad(cmdBuf, renderPass, armTex, currentSkinTex, armData);
+    }
+
+    // ---------------------------------------------------------
+    // DRAW CALL 2.5: TRACERS (Restored!)
+    // ---------------------------------------------------------
+    for (const auto& tracer : activeTracers) {
+        PushConstants tracerData = {
+            1980.0f, 1080.0f,
+            tracer.currentX - cameraX, tracer.currentY - cameraY,
+            tracer.length, 8.0f,
+            std::cos(tracer.angle), std::sin(tracer.angle),
+            0.0f, 0.0f, 1.0f, 1.0f,
+            {1.0f, 1.0f, 1.0f, -1.0f} // -1.0f bypasses the dye shader
+        };
+        DrawQuad(cmdBuf, renderPass, tracer762Tex, tracer762Tex, tracerData);
     }
 
     // draw call 3: crosshair
@@ -422,9 +571,9 @@ void Engine::Render(const Player& player, float mouseX, float mouseY) const {
         32.0f, 32.0f,
         1.0f, 0.0f,
         0.0f, 0.0f, 1.0f, 1.0f,
-        {1.0f, 1.0f, 1.0f, 1.0f}
+        {1.0f, 1.0f, 1.0f, -1.0f}
     };
-    DrawQuad(cmdBuf, renderPass, crosshairTex, crosshairData);
+    DrawQuad(cmdBuf, renderPass, crosshairTex, crosshairTex, crosshairData);
 
     SDL_EndGPURenderPass(renderPass);
     SDL_SubmitGPUCommandBuffer(cmdBuf);
@@ -447,7 +596,9 @@ void Engine::Shutdown() {
         if (crosshairTex) SDL_ReleaseGPUTexture(gpuDevice, crosshairTex);
         if (armTex) SDL_ReleaseGPUTexture(gpuDevice, armTex);
 
-        if (clock17Tex) SDL_ReleaseGPUTexture(gpuDevice, clock17Tex);
+        if (ak74Tex) SDL_ReleaseGPUTexture(gpuDevice, ak74Tex);
+
+        if (tracer762Tex) SDL_ReleaseGPUTexture(gpuDevice, tracer762Tex);
 
         if (waterTex) SDL_ReleaseGPUTexture(gpuDevice, waterTex);
         if (grassTex) SDL_ReleaseGPUTexture(gpuDevice, grassTex);
@@ -539,7 +690,7 @@ SDL_GPUShader* Engine::LoadShader(const char* filepath, SDL_GPUShaderStage stage
     shaderInfo.entrypoint = "main";
 
     if (stage == SDL_GPU_SHADERSTAGE_FRAGMENT) {
-        shaderInfo.num_samplers = 1;
+        shaderInfo.num_samplers = 2;
         shaderInfo.num_uniform_buffers = 1;
     }
     if (stage == SDL_GPU_SHADERSTAGE_VERTEX) {
@@ -588,113 +739,137 @@ SDL_GPUBuffer* Engine::CreateUnitQuad() const {
     return gpuBuffer;
 }
 
-SDL_GPUTexture* Engine::LoadTextureToGPU(const char* filepath, int* outWidth, int* outHeight) const {
-    int width, height, channels;
-    unsigned char* pixels = stbi_load(filepath, &width, &height, &channels, 4);
-    if (!pixels) return nullptr;
-
-    if (outWidth) *outWidth = width;
-    if (outHeight) *outHeight = height;
-
-    SDL_GPUTextureCreateInfo textureInfo = {};
-    textureInfo.type = SDL_GPU_TEXTURETYPE_2D;
-    textureInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    textureInfo.width = width;
-    textureInfo.height = height;
-    textureInfo.layer_count_or_depth = 1;
-    textureInfo.num_levels = 1;
-    textureInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-
-    SDL_GPUTexture* gpuTexture = SDL_CreateGPUTexture(gpuDevice, &textureInfo);
-    Uint32 imageSize = width * height * 4;
-
-    SDL_GPUTransferBufferCreateInfo transferInfo = {};
-    transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-    transferInfo.size = imageSize;
-    SDL_GPUTransferBuffer* transferBuffer = SDL_CreateGPUTransferBuffer(gpuDevice, &transferInfo);
-
-    void* map = SDL_MapGPUTransferBuffer(gpuDevice, transferBuffer, false);
-    memcpy(map, pixels, imageSize);
-    SDL_UnmapGPUTransferBuffer(gpuDevice, transferBuffer);
-    stbi_image_free(pixels);
-
-    SDL_GPUCommandBuffer* cmdBuf = SDL_AcquireGPUCommandBuffer(gpuDevice);
-    SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdBuf);
-
-    SDL_GPUTextureTransferInfo source = { transferBuffer, 0 };
-    SDL_GPUTextureRegion dest = {};
-    dest.texture = gpuTexture;
-    dest.w = static_cast<Uint32>(width);
-    dest.h = static_cast<Uint32>(height);
-    dest.d = 1;
-
-    SDL_UploadToGPUTexture(copyPass, &source, &dest, false);
-    SDL_EndGPUCopyPass(copyPass);
-    SDL_SubmitGPUCommandBuffer(cmdBuf);
-    SDL_WaitForGPUIdle(gpuDevice);
-    SDL_ReleaseGPUTransferBuffer(gpuDevice, transferBuffer);
-
-    return gpuTexture;
-}
-
 SDL_GPUTexture* Engine::LoadSVGToGPU(const char* filepath, float scale, int* outWidth, int* outHeight) const {
-    NSVGimage* svgImage = nsvgParseFromFile(filepath, "px", 96.0f);
-    if (!svgImage) {
-        SDL_Log("Failed to load SVG: %s", filepath);
+    auto document = lunasvg::Document::loadFromFile(filepath);
+    if (!document) {
+        SDL_Log("CRITICAL: Failed to load SVG file: %s", filepath);
         return nullptr;
     }
 
-    int width = static_cast<int>(svgImage->width * scale);
-    int height = static_cast<int>(svgImage->height * scale);
+    double docW = document->width();
+    double docH = document->height();
 
-    if (outWidth) *outWidth = width;
-    if (outHeight) *outHeight = height;
+    // 1. Handle missing/explicit dimensions
+    if (docW <= 0.0 || docH <= 0.0) {
+        lunasvg::Bitmap dummy = document->renderToBitmap(100, 100);
+        docW = dummy.width();
+        docH = dummy.height();
+    }
 
-    NSVGrasterizer* rasterizer = nsvgCreateRasterizer();
-    auto pixels = new unsigned char[width * height * 4];
+    // 2. Clamp scale to prevent negative/zero/massive dimensions
+    if (scale <= 0.0f) scale = 1.0f;
 
-    memset(pixels, 0, width * height * 4);
+    // 3. Calculate target dimensions safely (Clang-Tidy: Use auto with cast)
+    auto finalWidth  = static_cast<uint32_t>(docW * scale);
+    auto finalHeight = static_cast<uint32_t>(docH * scale);
 
-    nsvgRasterize(rasterizer, svgImage, 0, 0, scale, pixels, width, height, width * 4);
+    if (finalWidth < 1) finalWidth = 1;
+    if (finalHeight < 1) finalHeight = 1;
 
-    SDL_GPUTextureCreateInfo textureInfo = {};
-    textureInfo.type = SDL_GPU_TEXTURETYPE_2D;
-    textureInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    textureInfo.width = width;
-    textureInfo.height = height;
-    textureInfo.layer_count_or_depth = 1;
-    textureInfo.num_levels = 1;
-    textureInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    // 4. Apply safety cap (Clang-Tidy: constexpr)
+    constexpr uint32_t MAX_TEX_SIZE = 4096;
+    if (finalWidth > MAX_TEX_SIZE || finalHeight > MAX_TEX_SIZE) {
+        // Clang-Tidy: Use double to prevent precision loss (narrowing) warning
+        double maxDim = std::max(static_cast<double>(finalWidth), static_cast<double>(finalHeight));
+        double limitScale = static_cast<double>(MAX_TEX_SIZE) / maxDim;
 
+        finalWidth  = static_cast<uint32_t>(static_cast<double>(finalWidth) * limitScale);
+        finalHeight = static_cast<uint32_t>(static_cast<double>(finalHeight) * limitScale);
+
+        if (finalWidth < 1) finalWidth = 1;
+        if (finalHeight < 1) finalHeight = 1;
+    }
+
+    // 5. Render directly at the safe target size
+    lunasvg::Bitmap bitmap = document->renderToBitmap(finalWidth, finalHeight);
+    if (bitmap.isNull() || !bitmap.data()) {
+        SDL_Log("WARNING: Failed to render SVG to bitmap for %s", filepath);
+        return nullptr;
+    }
+
+    finalWidth = bitmap.width();
+    finalHeight = bitmap.height();
+
+    // Bitwise AND 0x7FFFFFFF guarantees it fits in a signed int, silencing the narrowing warning
+    if (outWidth) *outWidth = static_cast<int>(finalWidth & 0x7FFFFFFF);
+    if (outHeight) *outHeight = static_cast<int>(finalHeight & 0x7FFFFFFF);
+
+    // 6. Create Texture
+    SDL_GPUTextureCreateInfo textureInfo = {
+        .type = SDL_GPU_TEXTURETYPE_2D,
+        .format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+        .usage = SDL_GPU_TEXTUREUSAGE_SAMPLER,
+        .width = finalWidth,
+        .height = finalHeight,
+        .layer_count_or_depth = 1,
+        .num_levels = 1
+    };
     SDL_GPUTexture* gpuTexture = SDL_CreateGPUTexture(gpuDevice, &textureInfo);
-    Uint32 imageSize = width * height * 4;
+    if (!gpuTexture) {
+        SDL_Log("CRITICAL: Failed to create GPU texture for %s", filepath);
+        return nullptr;
+    }
 
-    SDL_GPUTransferBufferCreateInfo transferInfo = {};
-    transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-    transferInfo.size = imageSize;
+    // 7. Create Transfer Buffer
+    Uint32 imageSize = finalWidth * finalHeight * 4;
+    SDL_GPUTransferBufferCreateInfo transferInfo = {
+        .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+        .size = imageSize
+    };
     SDL_GPUTransferBuffer* transferBuffer = SDL_CreateGPUTransferBuffer(gpuDevice, &transferInfo);
+    if (!transferBuffer) {
+        SDL_Log("CRITICAL: Failed to create transfer buffer for %s", filepath);
+        SDL_ReleaseGPUTexture(gpuDevice, gpuTexture); // FIX: Changed from Destroy to Release
+        return nullptr;
+    }
 
-    void* map = SDL_MapGPUTransferBuffer(gpuDevice, transferBuffer, false);
-    memcpy(map, pixels, imageSize);
-    SDL_UnmapGPUTransferBuffer(gpuDevice, transferBuffer);
+    // 8. Map and swizzle from LunaSVG (BGRA) to GPU (RGBA)
+    // Clang-Tidy: Moved 'map' declaration inside the if-statement (C++17)
+    if (auto* map = static_cast<uint8_t*>(SDL_MapGPUTransferBuffer(gpuDevice, transferBuffer, false))) {
+        for (uint32_t y = 0; y < finalHeight; ++y) {
+            const uint8_t* srcRow = bitmap.data() + (y * bitmap.stride());
+            uint8_t* destRow = map + (y * finalWidth * 4);
 
-    delete[] pixels;
-    nsvgDeleteRasterizer(rasterizer);
-    nsvgDelete(svgImage);
+            for (uint32_t x = 0; x < finalWidth; ++x) {
+                destRow[x * 4 + 0] = srcRow[x * 4 + 2]; // R
+                destRow[x * 4 + 1] = srcRow[x * 4 + 1]; // G
+                destRow[x * 4 + 2] = srcRow[x * 4 + 0]; // B
+                destRow[x * 4 + 3] = srcRow[x * 4 + 3]; // A
+            }
+        }
+        SDL_UnmapGPUTransferBuffer(gpuDevice, transferBuffer);
+    }
 
+    // 9. Submit to GPU
     SDL_GPUCommandBuffer* cmdBuf = SDL_AcquireGPUCommandBuffer(gpuDevice);
+    if (!cmdBuf) {
+        SDL_ReleaseGPUTexture(gpuDevice, gpuTexture); // FIX: Changed from Destroy to Release
+        SDL_ReleaseGPUTransferBuffer(gpuDevice, transferBuffer);
+        return nullptr;
+    }
+
     SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdBuf);
 
-    SDL_GPUTextureTransferInfo source = { transferBuffer, 0 };
-    SDL_GPUTextureRegion dest = {};
-    dest.texture = gpuTexture;
-    dest.w = static_cast<Uint32>(width);
-    dest.h = static_cast<Uint32>(height);
-    dest.d = 1;
+    SDL_GPUTextureTransferInfo source = {
+        .transfer_buffer = transferBuffer,
+        .offset = 0,
+        .pixels_per_row = finalWidth,
+        .rows_per_layer = finalHeight
+    };
+
+    SDL_GPUTextureRegion dest = {
+        .texture = gpuTexture,
+        .w = finalWidth,
+        .h = finalHeight,
+        .d = 1
+    };
 
     SDL_UploadToGPUTexture(copyPass, &source, &dest, false);
     SDL_EndGPUCopyPass(copyPass);
+
+    // FIX: Restored the missing submission and return statement
     SDL_SubmitGPUCommandBuffer(cmdBuf);
+
     SDL_WaitForGPUIdle(gpuDevice);
     SDL_ReleaseGPUTransferBuffer(gpuDevice, transferBuffer);
 

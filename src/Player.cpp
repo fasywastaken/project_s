@@ -1,7 +1,8 @@
 // created by fasy on 19/04/2026
 
-#include "Player.h"
+#include "../Player.h"
 #include <cmath>
+#include <algorithm>
 
 Player::Player(float startX, float startY)
     : x(startX), y(startY), speed(400.0f), armAngle(0.0f),
@@ -11,8 +12,13 @@ Player::Player(float startX, float startY)
     inventory[1] = nullptr;
 }
 
+static constexpr float TILE_SIZE = 32.0f;
+[[maybe_unused]] static constexpr float HALF_TILE = TILE_SIZE * 0.5f;
+[[maybe_unused]] static constexpr float DIAGONAL_SCALE = 1.0f / std::numbers::sqrt2_v<float>;
+static constexpr float GUN_TIP_OFFSET = 65.0f;
+
 void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouseY, const int* mapGrid, int mapWidth, int mapHeight) {
-    // calculate raw input direction
+
     float inputX = 0.0f;
     float inputY = 0.0f;
 
@@ -26,8 +32,11 @@ void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouse
         inputY *= 0.707106f;
     }
 
-    int centerGridX = static_cast<int>((x + 16.0f) / 32.0f);
-    int centerGridY = static_cast<int>((y + 16.0f) / 32.0f);
+    inputX = std::clamp(inputX, -1.0f, 1.0f);
+    inputY = std::clamp(inputY, -1.0f, 1.0f);
+
+    int centerGridX = static_cast<int>((x + HALF_TILE) / TILE_SIZE);
+    int centerGridY = static_cast<int>((y + HALF_TILE) / TILE_SIZE);
 
     int standingOnTile = 0;
     if (centerGridX >= 0 && centerGridX < mapWidth && centerGridY >= 0 && centerGridY < mapHeight) {
@@ -35,7 +44,6 @@ void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouse
     }
 
     float speedMultiplier = 1.0f;
-
     // water slow
     if (standingOnTile == 1) {
         speedMultiplier = 0.66f;
@@ -105,13 +113,28 @@ void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouse
     float aimDy = mouseY - y;
     armAngle = std::atan2(aimDy, aimDx);
 
+    if (equippedWeapon != nullptr) {
+        equippedWeapon->Update(deltaTime);
+
+        if (equippedWeapon->isReloading) {
+            isAttacking = true;
+            float progress = equippedWeapon->currentReloadTimer / equippedWeapon->reloadTime;
+            currentFrame = static_cast<int>(progress * equippedWeapon->totalAnimFrames);
+        } else {
+            isAttacking = false;
+            currentFrame = 0;
+        }
+    }
+
     // universal 3-frame attack loop
     if (isAttacking) {
         frameTimer += deltaTime;
         if (frameTimer > 0.08f) {
             frameTimer = 0.0f;
             currentFrame++;
-            if (currentFrame > 3) {
+
+            // Limit to 4 frames (Frame 0: Idle/Reset, Frames 1-3: The Swing)
+            if (currentFrame >= 4) {
                 isAttacking = false;
                 currentFrame = 0;
             }
@@ -120,6 +143,7 @@ void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouse
         currentFrame = 0;
     }
 }
+
 
 void Player::Attack() {
     if (!isAttacking) {
@@ -131,17 +155,46 @@ void Player::Attack() {
     }
 }
 
+bool Player::AttemptFire(float& outGunTipX, float& outGunTipY) {
+    if (!equippedWeapon || equippedWeapon->currentAmmo <= 0) {
+        if (equippedWeapon) TriggerReload();
+        return false;
+    }
+
+    if (equippedWeapon->timeSinceLastShot < equippedWeapon->fireRate) {
+        return false;
+    }
+
+    // Shoot!
+    equippedWeapon->timeSinceLastShot = 0.0f;
+    equippedWeapon->currentAmmo--;
+
+    // Calculate gun tip position
+    float effectiveLength = GUN_TIP_OFFSET + equippedWeapon->gripOffsetX;
+    outGunTipX = x + std::cos(armAngle) * effectiveLength;
+    outGunTipY = y + std::sin(armAngle) * (GUN_TIP_OFFSET + equippedWeapon->gripOffsetY); // Fixed Y offset
+
+    return true;
+}
+
+void Player::TriggerReload() {
+    if (equippedWeapon && !equippedWeapon->isReloading &&
+        equippedWeapon->currentAmmo < equippedWeapon->magCapacity) {
+        equippedWeapon->isReloading = true;
+        equippedWeapon->currentReloadTimer = 0.0f;
+        }
+}
+
 void Player::SetInventorySlot(int slot, Weapon* weapon) {
-    if (slot >= 0 && slot < 2) {
+    if (slot >= 0 && slot < static_cast<int>(inventory.size())) {
         inventory[slot] = weapon;
     }
 }
 
 void Player::EquipSlot(int slot) {
     if (slot == 0 || slot == 1) {
-        if (inventory[slot] != nullptr) {
-            equippedWeapon = inventory[slot];
-        }
+        equippedWeapon = (slot >= 0 && slot < static_cast<int>(inventory.size()))
+                         ? inventory[slot] : nullptr;
     } else if (slot == 2) {
         equippedWeapon = nullptr;
     }

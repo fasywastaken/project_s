@@ -1,0 +1,38 @@
+name: Build resvg C-API for Mac and Linux
+on: [workflow_dispatch] # This allows you to trigger it manually
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest] # Spins up a Linux machine and a Mac
+
+    steps:
+      - name: Clone resvg Source
+        run: git clone https://github.com/linebender/resvg.git
+
+      # Installs the Rust Compiler on the cloud machines
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # Installs the C-API generator
+      - name: Install cargo-c
+        run: cargo install cargo-c
+
+      # Compiles the library
+      - name: Build C-API
+        run: |
+          cd resvg/crates/c-api
+          cargo cbuild --release
+
+      # Zips up the resulting .so, .dylib, and .h files and gives them to you
+      - name: Upload Binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: resvg-binaries-${{ matrix.os }}
+          path: |
+            resvg/target/**/release/*.so
+            resvg/target/**/release/*.dylib
+            resvg/target/**/release/resvg.h

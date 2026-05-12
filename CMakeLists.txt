@@ -26,18 +26,25 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(SDL3_mixer)
 
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Disable shared libs" FORCE)
+FetchContent_Declare(
+        lunasvg
+        URL https://github.com/sammycage/lunasvg/archive/refs/tags/v3.0.0.zip
+)
+FetchContent_MakeAvailable(lunasvg)
 
-add_executable(${PROJECT_NAME} main.cpp
-        Engine.cpp
-        Engine.h
-        Player.cpp
-        Player.h
-        Weapon.cpp
-        Weapon.h)
+add_executable(${PROJECT_NAME} src/main.cpp
+        src/Engine.cpp
+        src/Engine.h
+        src/Player.cpp
+        src/Player.h
+        src/Weapon.cpp
+        src/Weapon.h)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
         SDL3::SDL3
         SDL3_mixer::SDL3_mixer
+        lunasvg
 )
 
 # asset folder

@@ -3,6 +3,7 @@
 #pragma once
 #include <SDL3/SDL.h>
 #include <SDL3_mixer/SDL_mixer.h>
+#include <vector>
 
 class Player;
 
@@ -21,7 +22,17 @@ struct alignas(16) PushConstants {
     float uvX, uvY;
     float uvW, uvH;
 
+    float armorColor[4];
     float padding[4];
+};
+
+struct Tracer {
+    float startX, startY;
+    float currentX, currentY;
+    float angle;
+    float speed;
+    float length;
+    float life;
 };
 
 class Engine {
@@ -47,11 +58,15 @@ private:
     SDL_GPUTexture* sandTex;
     SDL_GPUTexture* grassTex;
 
+    SDL_GPUTexture* activePaletteTex{};
+    SDL_GPUTexture* testPaletteTex{};
+    SDL_GPUSampler* paletteSamplerObj;
+
     SDL_GPUTexture* playerTex;
     SDL_GPUSampler* playerSampler;
     SDL_GPUTexture* crosshairTex;
     SDL_GPUTexture* armTex;
-    SDL_GPUTexture* clock17Tex;
+    SDL_GPUTexture* ak74Tex;
 
     // audio logic
     MIX_Mixer* mainMixer = nullptr;
@@ -71,7 +86,6 @@ private:
     bool SetupPipeline();
     SDL_GPUShader* LoadShader(const char* filepath, SDL_GPUShaderStage stage) const;
     [[nodiscard]] SDL_GPUBuffer* CreateUnitQuad() const;
-    SDL_GPUTexture* LoadTextureToGPU(const char* filepath, int* outWidth, int* outHeight) const;
 
     // native svg loader
     SDL_GPUTexture* LoadSVGToGPU(const char* filepath, float scale, int* outWidth, int* outHeight) const;
@@ -79,5 +93,10 @@ private:
     // game loop helpers
     void ProcessInput(Player& player);
     void Render(const Player& player, float mouseX, float mouseY) const;
-    void DrawQuad(SDL_GPUCommandBuffer* cmdBuf, SDL_GPURenderPass* renderPass, SDL_GPUTexture* texture, const PushConstants& pushData) const;
+    void DrawQuad(SDL_GPUCommandBuffer* cmdBuf, SDL_GPURenderPass* renderPass,
+                  SDL_GPUTexture* spriteTex, SDL_GPUTexture* paletteTex,
+                  const PushConstants& pushData) const;
+
+    std::vector<Tracer> activeTracers;
+    SDL_GPUTexture* tracer762Tex;
 };
