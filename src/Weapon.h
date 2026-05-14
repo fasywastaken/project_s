@@ -11,7 +11,12 @@ public:
     float width, height;
     float gripOffsetX, gripOffsetY;
     float uvX, uvY, uvW, uvH;
-    int damage;
+    float damage;
+
+    float falloffStart = 500.0f;
+    float falloffEnd = 1200.0f;
+    float minDamagePct = 0.4f;
+
 
     float fireRate;
     float timeSinceLastShot;
@@ -26,9 +31,8 @@ public:
     bool isReloading;
 
     Weapon(SDL_GPUTexture* tex, float w, float h, float gX, float gY,
-           float uX, float uY, float uW, float uH,
-           int cols, int rows, int frames, float rTime,
-           float fRate, int magCap);
+               float uX, float uY, float uW, float uH,
+               int cols, int rows, int frames, float rTime, float fRate, int magCap, float dmg);
 
     void Update(float deltaTime);
 };

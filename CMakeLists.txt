@@ -26,25 +26,19 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(SDL3_mixer)
 
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Disable shared libs" FORCE)
-FetchContent_Declare(
-        lunasvg
-        URL https://github.com/sammycage/lunasvg/archive/refs/tags/v3.0.0.zip
-)
-FetchContent_MakeAvailable(lunasvg)
-
 add_executable(${PROJECT_NAME} src/main.cpp
         src/Engine.cpp
         src/Engine.h
         src/Player.cpp
         src/Player.h
         src/Weapon.cpp
-        src/Weapon.h)
+        src/Weapon.h
+        src/Enemy.cpp
+        src/Enemy.h)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
         SDL3::SDL3
         SDL3_mixer::SDL3_mixer
-        lunasvg
 )
 
 # asset folder
@@ -70,3 +64,28 @@ foreach(SHADER IN LISTS SHADER_SOURCES)
             COMMAND ${GLSLC} ${SHADER} -o ${SPV_FILE}
     )
 endforeach ()
+
+set(RESVG_DIR "${CMAKE_SOURCE_DIR}/vendor/resvg")
+target_include_directories(project_s PRIVATE "${RESVG_DIR}/include")
+if(WIN32)
+    target_link_libraries(project_s PRIVATE "${RESVG_DIR}/lib/resvg.lib")
+    add_custom_command(TARGET project_s POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${RESVG_DIR}/lib/resvg.dll"
+            $<TARGET_FILE_DIR:project_s>
+    )
+elseif(APPLE)
+    target_link_libraries(project_s PRIVATE "${RESVG_DIR}/lib/libresvg.dylib")
+    add_custom_command(TARGET project_s POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${RESVG_DIR}/lib/libresvg.dylib"
+            $<TARGET_FILE_DIR:project_s>
+    )
+elseif(UNIX)
+    target_link_libraries(project_s PRIVATE "${RESVG_DIR}/lib/libresvg.so")
+    add_custom_command(TARGET project_s POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${RESVG_DIR}/lib/libresvg.so"
+            $<TARGET_FILE_DIR:project_s>
+    )
+endif()

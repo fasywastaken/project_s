@@ -3,6 +3,7 @@
 #pragma once
 #include <SDL3/SDL.h>
 #include <SDL3_mixer/SDL_mixer.h>
+#include "Enemy.h"
 #include <vector>
 
 class Player;
@@ -22,7 +23,7 @@ struct alignas(16) PushConstants {
     float uvX, uvY;
     float uvW, uvH;
 
-    float armorColor[4];
+    float tintColor[4];
     float padding[4];
 };
 
@@ -33,6 +34,11 @@ struct Tracer {
     float speed;
     float length;
     float life;
+
+    int damage;
+    float falloffStart;
+    float falloffEnd;
+    float minDamagePct;
 };
 
 class Engine {
@@ -48,6 +54,8 @@ private:
     // core state
     bool isRunning;
     SDL_Window* window;
+    float screenWidth{};
+    float screenHeight{};
     SDL_GPUDevice* gpuDevice;
 
     // graphics pipeline and memory
@@ -60,10 +68,11 @@ private:
 
     SDL_GPUTexture* activePaletteTex{};
     SDL_GPUTexture* testPaletteTex{};
-    SDL_GPUSampler* paletteSamplerObj;
+    SDL_GPUSampler* paletteSampler;
+    SDL_GPUSampler* linearSampler;
 
     SDL_GPUTexture* playerTex;
-    SDL_GPUSampler* playerSampler;
+    SDL_GPUSampler* nearestSampler;
     SDL_GPUTexture* crosshairTex;
     SDL_GPUTexture* armTex;
     SDL_GPUTexture* ak74Tex;
@@ -76,11 +85,34 @@ private:
     MIX_Audio* sandSteps[2];
     MIX_Audio* grassSteps[2];
 
+    MIX_Track* weaponFireTrack;
+    MIX_Track* weaponMechTrack;
+    MIX_Track* playerTrack;
+
+    MIX_Audio* punch_swing;
+
+    MIX_Audio* ak47_switch;
+    MIX_Audio* ak47_fire;
+    MIX_Audio* ak47_reload;
+
     // game logic state
     float playerX, playerY;
     int playerWidth, playerHeight;
     int* mapGrid;
     int mapWidth, mapHeight;
+
+    // enemy logic
+    static constexpr int MAX_ENEMIES = 100;
+    Enemy enemies[MAX_ENEMIES];
+
+    // Enemy Assets
+    static constexpr int MAX_ENEMY_TRACKS = 4;
+    MIX_Track* enemyTracks[MAX_ENEMY_TRACKS];
+    int currentEnemyTrackIndex = 0;
+    float globalEnemyStepCooldown = 0.0f;
+
+    SDL_GPUTexture* spiderTex;
+    MIX_Audio* spiderSteps[2];
 
     // private subroutines
     bool SetupPipeline();
@@ -94,8 +126,8 @@ private:
     void ProcessInput(Player& player);
     void Render(const Player& player, float mouseX, float mouseY) const;
     void DrawQuad(SDL_GPUCommandBuffer* cmdBuf, SDL_GPURenderPass* renderPass,
-                  SDL_GPUTexture* spriteTex, SDL_GPUTexture* paletteTex,
-                  const PushConstants& pushData) const;
+              SDL_GPUTexture* texture, SDL_GPUTexture* palette,
+              const PushConstants& pc, SDL_GPUSampler* sampler = nullptr) const;
 
     std::vector<Tracer> activeTracers;
     SDL_GPUTexture* tracer762Tex;

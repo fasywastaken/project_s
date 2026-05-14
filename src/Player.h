@@ -2,7 +2,7 @@
 // Created by User on 19/04/2026.
 
 #pragma once
-#include "../Weapon.h"
+#include "Weapon.h"
 #include <array>
 
 class Player {
@@ -25,6 +25,17 @@ public:
     bool justStepped = false;
     int currentTile = 0;
 
+    float distanceWalked = 0.0f;
+    float timeSinceLastStep = 0.0f;
+    bool wasMoving = false;
+
+
+    // Audio Event Flags
+    bool justSwung = false;
+    bool justFired = false;
+    bool justReloaded = false;
+    bool justEquipped = false;
+
     std::array<Weapon*, 2> inventory{};
     Weapon* equippedWeapon = nullptr;
 
@@ -32,7 +43,7 @@ public:
 
     void Update(float deltaTime, const bool* keys, float mouseX, float mouseY,
                 const int* mapGrid, int mapWidth, int mapHeight);
-    void Attack();
+    void Melee();
 
     [[nodiscard]] bool AttemptFire(float& outGunTipX, float& outGunTipY);
     void TriggerReload();

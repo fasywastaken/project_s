@@ -9,7 +9,7 @@ layout(set = 3, binding = 0) uniform PushConstants {
     vec2 scale;
     vec2 rot;
     vec4 uvRect;
-    vec4 armorColor;
+    vec4 tintColor;
     vec4 padding;
 } pc;
 
@@ -19,51 +19,54 @@ layout(location = 0) out vec4 outColor;
 void main() {
     vec4 texel = texture(spriteSampler, fragUV);
 
-    // Bypass invisible pixels completely
-    if (texel.a < 0.05) discard;
-
-    // 1. ISOLATION: The -1.0f flag bypasses Terrain, UI, and Weapons perfectly
-    if (pc.armorColor.a < 0.0) {
+    if (pc.tintColor.a < 0.0) {
         outColor = texel;
         return;
     }
 
-    // 2. UN-PREMULTIPLY ALPHA FOR CLEAN COLOR DETECTION
-    // This strips away the "dark edge" of the anti-aliasing so the math works
+    if (texel.a < 0.8) discard;
+
     vec3 n = texel.rgb / max(texel.a, 0.001);
 
-    // 3. GRADIENT UV MAPPING
     vec2 localUV = (fragUV - pc.uvRect.xy) / max(pc.uvRect.zw, 0.001);
-    vec2 uvTL = localUV * 0.5;                             // Body
-    vec2 uvTR = vec2(localUV.x * 0.5 + 0.5, localUV.y * 0.5); // Arms
-    vec2 uvBL = vec2(localUV.x * 0.5, localUV.y * 0.5 + 0.5); // Backpack
-    vec2 uvBR = vec2(localUV.x * 0.5 + 0.5, localUV.y * 0.5 + 0.5); // Stroke
+    vec2 uvTL = localUV * 0.5;
+    vec2 uvTR = vec2(localUV.x * 0.5 + 0.5, localUV.y * 0.5);
+    vec2 uvBL = vec2(localUV.x * 0.5, localUV.y * 0.5 + 0.5);
+    vec2 uvBR = vec2(localUV.x * 0.5 + 0.5, localUV.y * 0.5 + 0.5);
 
-    // 4. PURE CHANNEL DOMINANCE (Bulletproof Mask Detection)
-    vec3 dyedColor = n; // Fallback to raw color just in case
+    vec3 baseYellow  = vec3(1.0, 1.0, 0.0);
+    vec3 baseMagenta = vec3(1.0, 0.0, 1.0);
+    vec3 baseRed     = vec3(1.0, 0.0, 0.0);
+    vec3 baseGreen   = vec3(0.0, 1.0, 0.0);
+    vec3 baseBlue    = vec3(0.0, 0.0, 1.0);
 
-    // Yellow (Arms): Red and Green are high, Blue is low
-    if (n.r > 0.4 && n.g > 0.4 && n.b < 0.3) {
-        dyedColor = texture(paletteSampler, uvTR).rgb;
-    }
-    // Magenta (Armor): Red and Blue are high, Green is low
-    else if (n.r > 0.4 && n.b > 0.4 && n.g < 0.3) {
-        dyedColor = pc.armorColor.rgb;
-    }
-    // Pure Red (Body): Red strictly dominates
-    else if (n.r > n.g + 0.2 && n.r > n.b + 0.2) {
-        dyedColor = texture(paletteSampler, uvTL).rgb;
-    }
-    // Pure Green (Backpack): Green strictly dominates
-    else if (n.g > n.r + 0.2 && n.g > n.b + 0.2) {
-        dyedColor = texture(paletteSampler, uvBL).rgb;
-    }
-    // Pure Blue (Stroke): Blue strictly dominates
-    else if (n.b > n.r + 0.2 && n.b > n.g + 0.2) {
-        dyedColor = texture(paletteSampler, uvBR).rgb;
+    float dYellow  = distance(n, baseYellow);
+    float dMagenta = distance(n, baseMagenta);
+    float dRed     = distance(n, baseRed);
+    float dGreen   = distance(n, baseGreen);
+    float dBlue    = distance(n, baseBlue);
+
+    float minDist = min(min(min(min(dYellow, dMagenta), dRed), dGreen), dBlue);
+
+    vec3 dyedColor = n;
+
+    if (minDist < 0.5) {
+        if (minDist == dYellow) {
+            dyedColor = texture(paletteSampler, uvTR).rgb;
+        }
+        else if (minDist == dMagenta) {
+            dyedColor = pc.tintColor.rgb;
+        }
+        else if (minDist == dRed) {
+            dyedColor = texture(paletteSampler, uvTL).rgb;
+        }
+        else if (minDist == dGreen) {
+            dyedColor = texture(paletteSampler, uvBL).rgb;
+        }
+        else if (minDist == dBlue) {
+            dyedColor = texture(paletteSampler, uvBR).rgb;
+        }
     }
 
-    // 5. RESTORE PERFECT ANTI-ALIASING
-    // We apply the chosen color, but use the SVG's original soft alpha!
-    outColor = vec4(dyedColor, texel.a);
+    outColor = vec4(dyedColor * texel.a, texel.a);
 }

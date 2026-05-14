@@ -1,13 +1,14 @@
 // created by fasy on 19/04/2026
 
-#include "../Player.h"
+#include "Player.h"
 #include <cmath>
 #include <algorithm>
 
 Player::Player(float startX, float startY)
     : x(startX), y(startY), speed(400.0f), armAngle(0.0f),
       isAttacking(false), currentFrame(0), frameTimer(0.0f),
-      currentCombo(1), equippedWeapon(nullptr) {
+      currentCombo(1), equippedWeapon(nullptr), distanceWalked(0.0f),
+      timeSinceLastStep(0.0f), wasMoving(false){
     inventory[0] = nullptr;
     inventory[1] = nullptr;
 }
@@ -18,6 +19,15 @@ static constexpr float TILE_SIZE = 32.0f;
 static constexpr float GUN_TIP_OFFSET = 65.0f;
 
 void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouseY, const int* mapGrid, int mapWidth, int mapHeight) {
+    // aimimg
+    float aimDx = mouseX - x;
+    float aimDy = mouseY - y;
+    float aimDistance = std::hypot(aimDx, aimDy);
+
+    // the deadzone
+    if (aimDistance > 1.0f) {
+        armAngle = std::atan2(aimDy, aimDx);
+    }
 
     float inputX = 0.0f;
     float inputY = 0.0f;
@@ -54,25 +64,13 @@ void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouse
 
     justStepped = false;
 
-    if (stepCooldown > 0.0f) {
-        stepCooldown -= deltaTime;
-    }
-
-    if (dx != 0.0f || dy != 0.0f) {
-
-        if (stepCooldown <= 0.0f) {
-            justStepped = true;
-            stepToggle = 1 - stepToggle;
-            currentTile = standingOnTile;
-
-            stepCooldown = (standingOnTile == 1) ? 0.60f : 0.40f;
-        }
-    }
-
-
     // physics and collision system
     float hitboxRadius = 24.0f;
     float tileSize = 32.0f;
+
+    // ADD THIS: Save the starting position
+    float oldX = x;
+    float oldY = y;
 
     // x-axis collision
     if (dx != 0.0f) {
@@ -108,35 +106,65 @@ void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouse
         }
     }
 
-    // aiming
-    float aimDx = mouseX - x;
-    float aimDy = mouseY - y;
-    armAngle = std::atan2(aimDy, aimDx);
+    // THE HYBRID FOOTSTEP SYSTEM
+    float actualDistMoved = std::hypot(x - oldX, y - oldY);
+    bool isMoving = (inputX != 0.0f || inputY != 0.0f);
 
-    if (equippedWeapon != nullptr) {
-        equippedWeapon->Update(deltaTime);
+    timeSinceLastStep += deltaTime;
 
-        if (equippedWeapon->isReloading) {
-            isAttacking = true;
-            float progress = equippedWeapon->currentReloadTimer / equippedWeapon->reloadTime;
-            currentFrame = static_cast<int>(progress * equippedWeapon->totalAnimFrames);
-        } else {
-            isAttacking = false;
-            currentFrame = 0;
+    if (isMoving) {
+        if (!wasMoving && timeSinceLastStep > 0.25f) {
+            justStepped = true;
+            stepToggle = 1 - stepToggle;
+            currentTile = standingOnTile;
+
+            distanceWalked = 0.0f;
+            timeSinceLastStep = 0.0f;
+        }
+        else {
+            distanceWalked += actualDistMoved;
+            float stepDistanceThreshold = 145.0f;
+
+            if (distanceWalked >= stepDistanceThreshold) {
+                justStepped = true;
+                stepToggle = 1 - stepToggle;
+                currentTile = standingOnTile;
+                distanceWalked = 0.0f;
+                timeSinceLastStep = 0.0f;
+            }
+        }
+    } else {
+        if (distanceWalked > 0.01f) {
+            distanceWalked -= 250.0f * deltaTime;
+            if (distanceWalked < 0.0f) distanceWalked = 0.0f;
         }
     }
 
-    // universal 3-frame attack loop
-    if (isAttacking) {
-        frameTimer += deltaTime;
-        if (frameTimer > 0.08f) {
-            frameTimer = 0.0f;
-            currentFrame++;
+    wasMoving = isMoving;
+    if (equippedWeapon != nullptr) {
+        equippedWeapon->Update(deltaTime);
+    }
 
-            // Limit to 4 frames (Frame 0: Idle/Reset, Frames 1-3: The Swing)
-            if (currentFrame >= 4) {
-                isAttacking = false;
-                currentFrame = 0;
+    if (isAttacking) {
+        Uint32 mouseState = SDL_GetMouseState(nullptr, nullptr);
+        bool holdingFire = (mouseState & SDL_BUTTON_LMASK) &&
+                           equippedWeapon != nullptr &&
+                           !equippedWeapon->isReloading &&
+                           equippedWeapon->currentAmmo > 0;
+
+        if (holdingFire) {
+            currentFrame = 1;
+            frameTimer = 0.0f;
+        } else {
+            frameTimer += deltaTime;
+            if (frameTimer > 0.08f) {
+                frameTimer = 0.0f;
+                currentFrame++;
+
+                if (currentFrame >= 4) {
+                    isAttacking = false;
+                    currentFrame = 0;
+                }
             }
         }
     } else {
@@ -145,44 +173,53 @@ void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouse
 }
 
 
-void Player::Attack() {
+void Player::Melee() {
     if (!isAttacking) {
         isAttacking = true;
         currentCombo = (currentCombo == 1) ? 2 : 1;
 
         currentFrame = 1;
         frameTimer = 0.0f;
+
+        if (equippedWeapon == nullptr) justSwung = true;
     }
 }
 
 bool Player::AttemptFire(float& outGunTipX, float& outGunTipY) {
-    if (!equippedWeapon || equippedWeapon->currentAmmo <= 0) {
-        if (equippedWeapon) TriggerReload();
+    if (equippedWeapon == nullptr) {
+        return false;
+    }
+    if (equippedWeapon->isReloading) {
         return false;
     }
 
+    if (equippedWeapon->currentAmmo <= 0) {
+        TriggerReload();
+        return false;
+    }
     if (equippedWeapon->timeSinceLastShot < equippedWeapon->fireRate) {
         return false;
     }
-
-    // Shoot!
     equippedWeapon->timeSinceLastShot = 0.0f;
     equippedWeapon->currentAmmo--;
 
-    // Calculate gun tip position
-    float effectiveLength = GUN_TIP_OFFSET + equippedWeapon->gripOffsetX;
+    float effectiveLength = 95.0f + equippedWeapon->gripOffsetX;
     outGunTipX = x + std::cos(armAngle) * effectiveLength;
-    outGunTipY = y + std::sin(armAngle) * (GUN_TIP_OFFSET + equippedWeapon->gripOffsetY); // Fixed Y offset
+    outGunTipY = y + std::sin(armAngle) * effectiveLength;
+    justFired = true;
 
     return true;
 }
 
 void Player::TriggerReload() {
     if (equippedWeapon && !equippedWeapon->isReloading &&
-        equippedWeapon->currentAmmo < equippedWeapon->magCapacity) {
+            equippedWeapon->currentAmmo < equippedWeapon->magCapacity) {
+
         equippedWeapon->isReloading = true;
         equippedWeapon->currentReloadTimer = 0.0f;
-        }
+
+        justReloaded = true;
+            }
 }
 
 void Player::SetInventorySlot(int slot, Weapon* weapon) {
@@ -192,9 +229,16 @@ void Player::SetInventorySlot(int slot, Weapon* weapon) {
 }
 
 void Player::EquipSlot(int slot) {
+    if (equippedWeapon != nullptr && equippedWeapon->isReloading) {
+        equippedWeapon->isReloading = false;
+        equippedWeapon->currentReloadTimer = 0.0f;
+    }
+
     if (slot == 0 || slot == 1) {
-        equippedWeapon = (slot >= 0 && slot < static_cast<int>(inventory.size()))
-                         ? inventory[slot] : nullptr;
+        if (inventory[slot] != nullptr && equippedWeapon != inventory[slot]) {
+            justEquipped = true;
+        }
+        equippedWeapon = (slot >= 0 && slot < static_cast<int>(inventory.size()))? inventory[slot] : nullptr;
     } else if (slot == 2) {
         equippedWeapon = nullptr;
     }
