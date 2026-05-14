@@ -195,7 +195,6 @@ void Engine::Run() {
     //temp
     player.SetInventorySlot(0, &ak74);
     player.EquipSlot(0);
-    enemies[0].Spawn(playerX + 300.0f, playerY);
 
     Uint64 lastTime = SDL_GetTicksNS();
 
@@ -413,7 +412,6 @@ void Engine::ProcessInput(Player& player) {
         }
 
         if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
-
             if (keys[SDL_SCANCODE_R]) {
                 player.TriggerReload();
             }
@@ -428,6 +426,26 @@ void Engine::ProcessInput(Player& player) {
             if (event.key.scancode == SDL_SCANCODE_KP_9) {
                 player.armorLevel = (player.armorLevel + 1) % 4;
                 SDL_Log("Switched to Armor Level: %d", player.armorLevel);
+            }
+            if (event.key.scancode == SDL_SCANCODE_KP_4) {
+                int enemiesToSpawn = 5;
+                int spawnedCount = 0;
+
+                for (int i = 0; i < MAX_ENEMIES; i++) {
+                    if (!enemies[i].active) {
+                        float offsetX = static_cast<float>(spawnedCount) * 70.0f;
+                        float offsetY = (spawnedCount % 2 == 0) ? 40.0f : -40.0f;
+
+                        enemies[i].Spawn(player.x + 500.0f + offsetX, player.y + offsetY);
+
+                        spawnedCount++;
+
+                        if (spawnedCount >= enemiesToSpawn) {
+                            break;
+                        }
+                    }
+                }
+                SDL_Log("Successfully spawned %d enemies!", spawnedCount);
             }
         }
     }

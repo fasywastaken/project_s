@@ -45,59 +45,50 @@ void Enemy::Update(float deltaTime, const Player& player) {
     float dy = player.y - y;
     float distance = std::hypot(dx, dy);
 
-    // 1. Handle Attack Cooldown
     if (currentAttackTimer > 0.0f) {
         currentAttackTimer -= deltaTime;
     }
 
-    // 2. Pathfinding & State Selection
     if (distance <= attackRange) {
         if (!isAttacking && currentAttackTimer <= 0.0f) {
             isAttacking = true;
-            currentFrame = 9; // Jump to the first frame of the attack animation
+            currentFrame = 9;
             frameTimer = 0.0f;
         }
     } else if (!isAttacking) {
-        // Move towards player
         float dirX = dx / distance;
         float dirY = dy / distance;
         x += dirX * speed * deltaTime;
         y += dirY * speed * deltaTime;
 
-        // Force a step sound every 0.35 seconds of movement
         timeSinceLastStep += deltaTime;
         if (timeSinceLastStep > 0.35f) {
             justStepped = true;
-            stepToggle = 1 - stepToggle; // Flips between 0 and 1
+            stepToggle = 1 - stepToggle;
             timeSinceLastStep = 0.0f;
         }
     }
 
-    // 3. The 4x3 Sprite Sheet Animator
     frameTimer += deltaTime;
-    if (frameTimer >= 0.075f) { // Animation speed
+    if (frameTimer >= 0.075f) {
         frameTimer = 0.0f;
 
         if (isAttacking) {
             currentFrame++;
             if (currentFrame > 11) {
-                // Attack animation finished!
                 isAttacking = false;
                 currentFrame = 0;
                 currentAttackTimer = attackCooldown;
 
-                // Placeholder until we implement player health
                 SDL_Log("ENEMY HIT PLAYER FOR %d DAMAGE!", damage);
             }
         } else if (distance > attackRange) {
-            // Walking loop (Frames 1 through 8)
             if (currentFrame < 1 || currentFrame >= 8) {
                 currentFrame = 1;
             } else {
                 currentFrame++;
             }
         } else {
-            // Standing close but on cooldown
             currentFrame = 0;
         }
     }
