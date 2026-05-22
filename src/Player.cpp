@@ -1,6 +1,7 @@
 // created by fasy on 19/04/2026
 
 #include "Player.h"
+#include "Engine.h"
 #include <cmath>
 #include <algorithm>
 
@@ -16,9 +17,8 @@ Player::Player(float startX, float startY)
 static constexpr float TILE_SIZE = 32.0f;
 [[maybe_unused]] static constexpr float HALF_TILE = TILE_SIZE * 0.5f;
 [[maybe_unused]] static constexpr float DIAGONAL_SCALE = 1.0f / std::numbers::sqrt2_v<float>;
-static constexpr float GUN_TIP_OFFSET = 65.0f;
 
-void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouseY, const int* mapGrid, int mapWidth, int mapHeight) {
+void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouseY, const int* mapGrid, int mapWidth, int mapHeight, const Engine& engine) {
     // aimimg
     float aimDx = mouseX - x;
     float aimDy = mouseY - y;
@@ -105,6 +105,28 @@ void Player::Update(float deltaTime, const bool* keys, float mouseX, float mouse
             }
         }
     }
+
+    constexpr float stemRadius = 21.0f;
+
+    for (const auto& tree : engine.trees) {
+        if (!tree.active) continue;
+
+        float treeCenterX = tree.x + 64.0f;
+        float treeCenterY = tree.y + 64.0f;
+
+        float toPlayerX = x - treeCenterX;
+        float toPlayerY = y - treeCenterY;
+        float dist = std::hypot(toPlayerX, toPlayerY);
+        float minDist = hitboxRadius + stemRadius;
+
+        if (dist < minDist && dist > 0.0f) {
+            float pushX = (toPlayerX / dist) * (minDist - dist);
+            float pushY = (toPlayerY / dist) * (minDist - dist);
+            x += pushX;
+            y += pushY;
+        }
+    }
+
 
     // THE HYBRID FOOTSTEP SYSTEM
     float actualDistMoved = std::hypot(x - oldX, y - oldY);

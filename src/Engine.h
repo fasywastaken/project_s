@@ -4,13 +4,41 @@
 #include <SDL3/SDL.h>
 #include <SDL3_mixer/SDL_mixer.h>
 #include "Enemy.h"
+#include "WaveManager.h"
 #include <vector>
 
 class Player;
-
 struct Vertex {
     float x, y;
     float u, v;
+};
+
+class Destructible {
+public:
+    virtual ~Destructible() = default;
+    virtual void TakeDamage(int damage) = 0;
+    float x{}, y{};
+    int hp{};
+    bool active = true;
+};
+
+struct Tree : public Destructible {
+    int variant;
+    float scale = 1.0f;
+
+    Tree(float x, float y, int var, bool act, int h, float s)
+        : variant(var), scale(s) {
+        this->x = x;
+        this->y = y;
+        this->active = act;
+        this->hp = h;
+    }
+
+    void TakeDamage(int damage) override {
+        hp -= damage;
+        scale = std::max(0.3f, static_cast<float>(hp) / 50.0f);
+        if (hp <= 0) active = false;
+    }
 };
 
 struct alignas(16) PushConstants {
@@ -51,12 +79,15 @@ public:
     void Shutdown();
 
 private:
+    friend class Player;
+
     // core state
     bool isRunning;
     SDL_Window* window;
     float screenWidth{};
     float screenHeight{};
     SDL_GPUDevice* gpuDevice;
+    WaveManager waveManager;
 
     // graphics pipeline and memory
     SDL_GPUGraphicsPipeline* pipeline;
@@ -65,6 +96,9 @@ private:
     SDL_GPUTexture* waterTex;
     SDL_GPUTexture* sandTex;
     SDL_GPUTexture* grassTex;
+
+    SDL_GPUTexture* treeTex;
+    std::vector<Tree> trees;
 
     SDL_GPUTexture* activePaletteTex{};
     SDL_GPUTexture* testPaletteTex{};
@@ -95,11 +129,17 @@ private:
     MIX_Audio* ak47_fire;
     MIX_Audio* ak47_reload;
 
+    void GenerateMap(int width, int height);
+    static int GetTileValue(int x, int y, const int* grid, int w, int h);
+
+    static void ApplyBlur(int* grid, int w, int h, std::vector<int>& buffer);
+
     // game logic state
     float playerX, playerY;
     int playerWidth, playerHeight;
     int* mapGrid;
     int mapWidth, mapHeight;
+    bool DamageDestructibles(float hitX, float hitY, int damage, float radius);
 
     // enemy logic
     static constexpr int MAX_ENEMIES = 100;

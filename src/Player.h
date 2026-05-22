@@ -4,6 +4,7 @@
 #pragma once
 #include "Weapon.h"
 #include <array>
+class Engine;
 
 class Player {
 public:
@@ -42,7 +43,7 @@ public:
     Player(float startX, float startY);
 
     void Update(float deltaTime, const bool* keys, float mouseX, float mouseY,
-                const int* mapGrid, int mapWidth, int mapHeight);
+                const int* mapGrid, int mapWidth, int mapHeight, const Engine& engine);
     void Melee();
 
     [[nodiscard]] bool AttemptFire(float& outGunTipX, float& outGunTipY);

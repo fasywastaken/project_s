@@ -34,7 +34,9 @@ add_executable(${PROJECT_NAME} src/main.cpp
         src/Weapon.cpp
         src/Weapon.h
         src/Enemy.cpp
-        src/Enemy.h)
+        src/Enemy.h
+        src/WaveManager.cpp
+        src/WaveManager.h)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
         SDL3::SDL3

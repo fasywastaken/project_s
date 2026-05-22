@@ -3,6 +3,8 @@
 //
 
 #pragma once
+#include <vector>
+struct Tree;
 
 class Player;
 
@@ -30,5 +32,5 @@ public:
     Enemy();
 
     void Spawn(float startX, float startY);
-    void Update(float deltaTime, const Player& player);
+    void Update(float deltaTime, const Player& player, const Enemy* allEnemies, int maxEnemies, const std::vector<Tree>& trees);
 };

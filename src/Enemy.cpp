@@ -2,6 +2,7 @@
 // Created by User on 15/05/2026.
 //
 
+#include "Engine.h"
 #include "Enemy.h"
 #include "Player.h"
 #include <cmath>
@@ -26,7 +27,7 @@ void Enemy::Spawn(float startX, float startY) {
     damage = 20;
 
     attackRange = 45.0f;
-    attackCooldown = 1.2f;
+    attackCooldown = 0.5f;
     currentAttackTimer = 0.0f;
 
     currentFrame = 0; // 0 = Idle
@@ -38,34 +39,80 @@ void Enemy::Spawn(float startX, float startY) {
     justStepped = false;
 }
 
-void Enemy::Update(float deltaTime, const Player& player) {
+void Enemy::Update(float deltaTime, const Player& player, const Enemy* allEnemies, int maxEnemies, const std::vector<Tree>& trees) {
     if (!active) return;
 
     float dx = player.x - x;
     float dy = player.y - y;
-    float distance = std::hypot(dx, dy);
+    float distToPlayer = std::hypot(dx, dy);
 
     if (currentAttackTimer > 0.0f) {
         currentAttackTimer -= deltaTime;
     }
 
-    if (distance <= attackRange) {
+    float pushRadius = 64.0f;
+    float sepX = 0.0f;
+    float sepY = 0.0f;
+
+    if (allEnemies != nullptr) {
+        for (int j = 0; j < maxEnemies; ++j) {
+            if (!allEnemies[j].active || &allEnemies[j] == this) continue;
+
+            float neighborDx = x - allEnemies[j].x;
+            float neighborDy = y - allEnemies[j].y;
+            float distToNeighbor = std::hypot(neighborDx, neighborDy);
+
+            if (distToNeighbor > 0.0f && distToNeighbor < pushRadius) {
+                float pushStrength = 1.0f - (distToNeighbor / pushRadius);
+                sepX += (neighborDx / distToNeighbor) * pushStrength;
+                sepY += (neighborDy / distToNeighbor) * pushStrength;
+            }
+        }
+    }
+
+    if (distToPlayer <= attackRange) {
         if (!isAttacking && currentAttackTimer <= 0.0f) {
             isAttacking = true;
-            currentFrame = 9;
+            currentFrame = 8;
             frameTimer = 0.0f;
         }
     } else if (!isAttacking) {
-        float dirX = dx / distance;
-        float dirY = dy / distance;
-        x += dirX * speed * deltaTime;
-        y += dirY * speed * deltaTime;
+        float pushForce = 240.0f;
+        float dirX = dx / distToPlayer;
+        float dirY = dy / distToPlayer;
+
+        float finalVx = (dirX * speed) + (sepX * pushForce);
+        float finalVy = (dirY * speed) + (sepY * pushForce);
+
+        x += finalVx * deltaTime;
+        y += finalVy * deltaTime;
 
         timeSinceLastStep += deltaTime;
         if (timeSinceLastStep > 0.35f) {
             justStepped = true;
             stepToggle = 1 - stepToggle;
             timeSinceLastStep = 0.0f;
+        }
+    }
+
+    for (const auto& tree : trees) {
+        constexpr float enemyRadius = 32.0f;
+        constexpr float stemRadius  = 21.0f;
+        if (!tree.active) continue;
+
+        float treeCenterX = tree.x + 64.0f;
+        float treeCenterY = tree.y + 64.0f;
+
+        float toEnemyX = x - treeCenterX;
+        float toEnemyY = y - treeCenterY;
+        float dist = std::hypot(toEnemyX, toEnemyY);
+        float minDist = enemyRadius + stemRadius;
+
+        if (dist < minDist && dist > 0.0f) {
+            float pushX = (toEnemyX / dist) * (minDist - dist);
+            float pushY = (toEnemyY / dist) * (minDist - dist);
+            x += pushX;
+            y += pushY;
         }
     }
 
@@ -82,7 +129,7 @@ void Enemy::Update(float deltaTime, const Player& player) {
 
                 SDL_Log("ENEMY HIT PLAYER FOR %d DAMAGE!", damage);
             }
-        } else if (distance > attackRange) {
+        } else if (distToPlayer > attackRange) {
             if (currentFrame < 1 || currentFrame >= 8) {
                 currentFrame = 1;
             } else {
